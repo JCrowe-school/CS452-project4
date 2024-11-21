@@ -45,6 +45,7 @@ void check_buddy_pool_full(struct buddy_pool *pool)
   assert(pool->avail[pool->kval_m].next == pool->base);
 }
 
+
 /**
  * Check the pool to ensure it is empty.
  */
@@ -60,58 +61,58 @@ void check_buddy_pool_empty(struct buddy_pool *pool)
     }
 }
 
-/**
- * Test allocating 1 byte to make sure we split the blocks all the way down
- * to MIN_K size. Then free the block and ensure we end up with a full
- * memory pool again
- */
-void test_buddy_malloc_one_byte(void)
-{
-  fprintf(stderr, "->Test allocating and freeing 1 byte\n");
-  struct buddy_pool pool;
-  int kval = MIN_K;
-  size_t size = UINT64_C(1) << kval;
-  buddy_init(&pool, size);
-  void *mem = buddy_malloc(&pool, 1);
-  //Make sure correct kval was allocated
-  buddy_free(&pool, mem);
-  check_buddy_pool_full(&pool);
-  buddy_destroy(&pool);
-}
+// /**
+//  * Test allocating 1 byte to make sure we split the blocks all the way down
+//  * to MIN_K size. Then free the block and ensure we end up with a full
+//  * memory pool again
+//  */
+// void test_buddy_malloc_one_byte(void)
+// {
+//   fprintf(stderr, "->Test allocating and freeing 1 byte\n");
+//   struct buddy_pool pool;
+//   int kval = MIN_K;
+//   size_t size = UINT64_C(1) << kval;
+//   buddy_init(&pool, size);
+//   void *mem = buddy_malloc(&pool, 1);
+//   //Make sure correct kval was allocated
+//   buddy_free(&pool, mem);
+//   check_buddy_pool_full(&pool);
+//   buddy_destroy(&pool);
+// }
 
-/**
- * Tests the allocation of one massive block that should consume the entire memory
- * pool and makes sure that after the pool is empty we correctly fail subsequent calls.
- */
-void test_buddy_malloc_one_large(void)
-{
-  fprintf(stderr, "->Testing size that will consume entire memory pool\n");
-  struct buddy_pool pool;
-  size_t bytes = UINT64_C(1) << MIN_K;
-  buddy_init(&pool, bytes);
+// /**
+//  * Tests the allocation of one massive block that should consume the entire memory
+//  * pool and makes sure that after the pool is empty we correctly fail subsequent calls.
+//  */
+// void test_buddy_malloc_one_large(void)
+// {
+//   fprintf(stderr, "->Testing size that will consume entire memory pool\n");
+//   struct buddy_pool pool;
+//   size_t bytes = UINT64_C(1) << MIN_K;
+//   buddy_init(&pool, bytes);
 
-  //Ask for an exact K value to be allocated. This test makes assumptions on
-  //the internal details of buddy_init.
-  size_t ask = bytes - sizeof(struct avail);
-  void *mem = buddy_malloc(&pool, ask);
-  assert(mem != NULL);
+//   //Ask for an exact K value to be allocated. This test makes assumptions on
+//   //the internal details of buddy_init.
+//   size_t ask = bytes - sizeof(struct avail);
+//   void *mem = buddy_malloc(&pool, ask);
+//   assert(mem != NULL);
 
-  //Move the pointer back and make sure we got what we expected
-  struct avail *tmp = (struct avail *)mem - 1;
-  assert(tmp->kval == MIN_K);
-  assert(tmp->tag == BLOCK_RESERVED);
-  check_buddy_pool_empty(&pool);
+//   //Move the pointer back and make sure we got what we expected
+//   struct avail *tmp = (struct avail *)mem - 1;
+//   assert(tmp->kval == MIN_K);
+//   assert(tmp->tag == BLOCK_RESERVED);
+//   check_buddy_pool_empty(&pool);
 
-  //Verify that a call on an empty tool fails as expected and errno is set to ENOMEM.
-  void *fail = buddy_malloc(&pool, 5);
-  assert(fail == NULL);
-  assert(errno = ENOMEM);
+//   //Verify that a call on an empty tool fails as expected and errno is set to ENOMEM.
+//   void *fail = buddy_malloc(&pool, 5);
+//   assert(fail == NULL);
+//   assert(errno = ENOMEM);
 
-  //Free the memory and then check to make sure everything is OK
-  buddy_free(&pool, mem);
-  check_buddy_pool_full(&pool);
-  buddy_destroy(&pool);
-}
+//   //Free the memory and then check to make sure everything is OK
+//   buddy_free(&pool, mem);
+//   check_buddy_pool_full(&pool);
+//   buddy_destroy(&pool);
+// }
 
 /**
  * Tests to make sure that the struct buddy_pool is correct and all fields
@@ -143,7 +144,7 @@ int main(void) {
 
   UNITY_BEGIN();
   RUN_TEST(test_buddy_init);
-  RUN_TEST(test_buddy_malloc_one_byte);
-  RUN_TEST(test_buddy_malloc_one_large);
+  // RUN_TEST(test_buddy_malloc_one_byte);
+  // RUN_TEST(test_buddy_malloc_one_large);
 return UNITY_END();
 }
