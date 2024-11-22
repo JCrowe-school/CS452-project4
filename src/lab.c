@@ -11,7 +11,7 @@ size_t btok(size_t bytes) {
 }
 
 struct avail *buddy_calc(struct buddy_pool *pool, struct avail *buddy) {
-    uintptr_t offset = ((uintptr_t) buddy - (uintptr_t) pool->base) ^ UINT64_C(1) << buddy->kval;
+    uintptr_t offset = (((uintptr_t) buddy - (uintptr_t) pool->base) ^ UINT64_C(1) << buddy->kval) % pool->numbytes; //modulo to make sure offset doesn't overflow the assigned pool
     return (struct avail *) (pool->base + offset);
 }
 
@@ -64,18 +64,25 @@ void buddy_free(struct buddy_pool *pool, void *ptr) {
                 P = T;
             }
 
-            P->prev->next = P->next;
-            P->next->prev = P->prev;
+            if(P->prev != P->next) {
+                P->prev->next = P->next;
+                P->next->prev = P->prev;
+            } else {
+                pool->avail[P->kval].next = pool->avail[P->kval].prev = &pool->avail[P->kval];
+            }
             L->kval++;
             if(L->kval < pool->kval_m) {buddy_free(pool, L);}
         }
 
         // ensures that L is only inserted once fully freed
-        if(L->tag != BLOCK_AVAIL) { 
+        if(L->tag != BLOCK_AVAIL && L->tag != pool->kval_m) { 
             L->tag = BLOCK_AVAIL;
             L->next = pool->avail[L->kval].next;
             L->prev = pool->avail[L->kval].prev;
             pool->avail[L->kval].next->prev = pool->avail[L->kval].prev->next = L;
+        } else if(L->tag == pool->kval_m) {
+            L->tag = BLOCK_AVAIL;
+            L->next = L->prev = &pool->avail[pool->kval_m];
         }
     }
 }

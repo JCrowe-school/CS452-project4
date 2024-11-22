@@ -144,7 +144,7 @@ int main(void) {
 
   UNITY_BEGIN();
   RUN_TEST(test_buddy_init);
-  // RUN_TEST(test_buddy_malloc_one_byte);
-  // RUN_TEST(test_buddy_malloc_one_large);
+  RUN_TEST(test_buddy_malloc_one_byte);
+  //RUN_TEST(test_buddy_malloc_one_large);
 return UNITY_END();
 }
