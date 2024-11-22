@@ -11,64 +11,76 @@ size_t btok(size_t bytes) {
 }
 
 struct avail *buddy_calc(struct buddy_pool *pool, struct avail *buddy) {
-    return (struct avail *) ((uintptr_t) pool->base ^ (UINT64_C(1) << buddy->kval));
+    uintptr_t offset = ((uintptr_t) buddy - (uintptr_t) pool->base) ^ UINT64_C(1) << buddy->kval;
+    return (struct avail *) (pool->base + offset);
 }
 
 void *buddy_malloc(struct buddy_pool *pool, size_t size) {
     if(size == 0 || pool == NULL) {return NULL;}
 
-    unsigned int i = btok(size);
-    while(i <= pool->kval_m && pool->avail[i].tag != BLOCK_AVAIL) {i++;}
-    if(i > pool->kval_m) {
+    struct avail *ablock = NULL;
+    for(size_t i = btok(size); i <= pool->kval_m; i++) {
+        struct avail *curr = pool->avail[i].next;
+        do{
+            if(curr->tag == BLOCK_AVAIL) {ablock = curr; break;}
+        }while(curr->next != pool->avail[i].next);
+        if(ablock != NULL) {break;}
+    }
+    if(ablock == NULL) {
         perror("buddy: no available block for allocation!");
         errno = ENOMEM;
         return NULL;
     }
-    struct avail *L = pool->avail[i].next;
-    struct avail *P = L->next;
-    pool->avail[i].next = P;
-    P->prev = &pool->avail[i];
+
+    struct avail *L = ablock;
     L->tag = BLOCK_RESERVED;
 
     unsigned int fit = false;
     while(!fit) {
-        i--;
-        L->kval = i;
-        P = buddy_calc(pool, L);
+        struct avail *P = buddy_calc(pool, L);
+        L->kval--;
+        P->kval = L->kval;
         P->tag = BLOCK_AVAIL;
-        P->kval = i;
-        P->next = P->prev = &pool->avail[i];
-        pool->avail[i].next = pool->avail[i].prev = P;
-        if(i == btok(size)) {
+        P->next = pool->avail[P->kval].next;
+        P->prev = pool->avail[P->kval].prev;
+        pool->avail[P->kval].next->prev = pool->avail[P->kval].prev->next = P;
+        if(L->kval == btok(size)) {
             fit = true;
         }
     }
 
-    return L;
+    return (void *)L;
 }
 
 void buddy_free(struct buddy_pool *pool, void *ptr) {
-    if(ptr != NULL) {
+    if(ptr != NULL && pool != NULL) {
         struct avail *L = (struct avail *) ptr;
         struct avail *P = buddy_calc(pool, L);
-        if(pool->kval_m == L->kval || P->tag == BLOCK_RESERVED || (P->tag == BLOCK_AVAIL && P->kval != L->kval)) {
-            L->tag = BLOCK_AVAIL;
-            P = pool->avail[L->kval].next;
-            L->next = P;
-            P->prev = L;
-            L->prev = &pool->avail[L->kval];
-            pool->avail[L->kval].next = L;
-        } else {
-            P->prev->next = L->next;
-            P->next->prev = L->prev;
+        
+        if(P->tag == BLOCK_AVAIL && P->kval == L->kval) {
+            if(P < L) {
+                struct avail *T = L;
+                L = P;
+                P = T;
+            }
+
+            P->prev->next = P->next;
+            P->next->prev = P->prev;
             L->kval++;
-            if(P < L) {L = P;}
-            buddy_free(pool, L);
+            if(L->kval < pool->kval_m) {buddy_free(pool, L);}
+        }
+
+        // ensures that L is only inserted once fully freed
+        if(L->tag != BLOCK_AVAIL) { 
+            L->tag = BLOCK_AVAIL;
+            L->next = pool->avail[L->kval].next;
+            L->prev = pool->avail[L->kval].prev;
+            pool->avail[L->kval].next->prev = pool->avail[L->kval].prev->next = L;
         }
     }
 }
 
-void *buddy_realloc(struct buddy_pool *pool, void *ptr, size_t size) {}
+//void *buddy_realloc(struct buddy_pool *pool, void *ptr, size_t size) {}
 
 void buddy_init(struct buddy_pool *pool, size_t size) {
     if(size == 0) {size = UINT64_C(1) << DEFAULT_K;}
