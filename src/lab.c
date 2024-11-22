@@ -4,6 +4,8 @@
 
 
 size_t btok(size_t bytes) {
+    if(bytes == 0) return 0; // avoid edge case of division by zero
+
     unsigned int count = 0;
     bytes--;
     while(bytes > 0) {bytes >>= 1; count++;}
@@ -17,6 +19,7 @@ struct avail *buddy_calc(struct buddy_pool *pool, struct avail *buddy) {
 
 void *buddy_malloc(struct buddy_pool *pool, size_t size) {
     if(size == 0 || pool == NULL) {return NULL;}
+    size += sizeof(struct avail);
 
     struct avail *ablock = NULL;
     for(size_t i = btok(size); i <= pool->kval_m; i++) {
@@ -34,27 +37,38 @@ void *buddy_malloc(struct buddy_pool *pool, size_t size) {
 
     struct avail *L = ablock;
     L->tag = BLOCK_RESERVED;
+//    printf("debug- buddy malloc: kval found: %d.\n", L->kval);
 
-    unsigned int fit = false;
+    unsigned int fit = (L->kval == btok(size)) ? true : false;
     while(!fit) {
         struct avail *P = buddy_calc(pool, L);
         L->kval--;
+//        printf("debug- buddy malloc: decremented kval to %d\n", L->kval);
         P->kval = L->kval;
         P->tag = BLOCK_AVAIL;
-        P->next = pool->avail[P->kval].next;
-        P->prev = pool->avail[P->kval].prev;
-        pool->avail[P->kval].next->prev = pool->avail[P->kval].prev->next = P;
+        if(pool->avail[P->kval].next == &pool->avail[P->kval] && pool->avail[P->kval].prev == &pool->avail[P->kval]) {
+            P->next = P->prev = &pool->avail[P->kval];
+        } else {
+            P->next = pool->avail[P->kval].next;
+            P->prev = &pool->avail[P->kval];
+            pool->avail[P->kval].next->prev = P;
+            pool->avail[P->kval].next = P;
+        }
         if(L->kval == btok(size)) {
             fit = true;
+            printf("debug- buddy malloc: decremented kval to %d.\n", L->kval);
         }
     }
 
-    return (void *)L;
+    // returns pointer adjusted for struct avail header
+    return (void *)(L + 1);
 }
 
 void buddy_free(struct buddy_pool *pool, void *ptr) {
     if(ptr != NULL && pool != NULL) {
-        struct avail *L = (struct avail *) ptr;
+        // adjust ptr for the struct avail header
+        struct avail *L = (struct avail *) ptr - 1;
+        printf("debug- buddy free: value of *ptr - *L = %d.\n", (int) ((uintptr_t) ptr - (uintptr_t) L));
         struct avail *P = buddy_calc(pool, L);
         
         if(P->tag == BLOCK_AVAIL && P->kval == L->kval) {
@@ -64,6 +78,8 @@ void buddy_free(struct buddy_pool *pool, void *ptr) {
                 P = T;
             }
 
+            printf("debug- buddy free: kval %d's P->prev: %p.\n", L->kval, (void *) P->prev);
+            printf("debug- buddy free: kval %d's P->next: %p.\n", L->kval, (void *) P->next);
             if(P->prev != P->next) {
                 P->prev->next = P->next;
                 P->next->prev = P->prev;
@@ -75,14 +91,19 @@ void buddy_free(struct buddy_pool *pool, void *ptr) {
         }
 
         // ensures that L is only inserted once fully freed
-        if(L->tag != BLOCK_AVAIL && L->tag != pool->kval_m) { 
+        if(L->tag != BLOCK_AVAIL && L->kval != pool->kval_m) { 
             L->tag = BLOCK_AVAIL;
             L->next = pool->avail[L->kval].next;
-            L->prev = pool->avail[L->kval].prev;
-            pool->avail[L->kval].next->prev = pool->avail[L->kval].prev->next = L;
+            L->prev = &pool->avail[L->kval];
+            pool->avail[L->kval].next->prev = L;
+            pool->avail[L->kval].next = L;
+            printf("debug- buddy free: max kval reached: %d.\n", L->kval);
         } else if(L->tag == pool->kval_m) {
+//            L = (struct avail *) pool->base;
             L->tag = BLOCK_AVAIL;
-            L->next = L->prev = &pool->avail[pool->kval_m];
+            L->next = &pool->avail[pool->kval_m];
+            L->prev = &pool->avail[pool->kval_m];
+            printf("debug- buddy free: pool->base = %p, L = %p.\n", (void *) pool->base, (void *) L);
         }
     }
 }
