@@ -62,6 +62,25 @@ void check_buddy_pool_empty(struct buddy_pool *pool)
 }
 
 /**
+ * Check the pool to ensure it's unused before kv and available after kv.
+ */
+void check_buddy_pool_partially_used(struct buddy_pool *pool, size_t kv) {
+  //The values under kv should be unused
+  for(size_t i = 0; i < kv; i++){
+    assert(pool->avail[i].next == &pool->avail[i]);
+    assert(pool->avail[i].prev == &pool->avail[i]);
+    assert(pool->avail[i].tag == BLOCK_UNUSED);
+    assert(pool->avail[i].kval == i); 
+  }
+  //The values after kv should be available
+  for(size_t i = kv + 1; i < pool->kval_m; i++) {
+    assert(pool->avail[i].next->tag == BLOCK_AVAIL);
+    assert(pool->avail[i].next->next == &pool->avail[i]);
+    assert(pool->avail[i].prev->prev == &pool->avail[i]);
+  }
+}
+
+/**
  * Test allocating 1 byte to make sure we split the blocks all the way down
  * to MIN_K size. Then free the block and ensure we end up with a full
  * memory pool again
@@ -134,6 +153,39 @@ void test_buddy_init(void)
     }
 }
 
+/**
+ * Tests if realloc can properly: malloc, realloc, and free.
+ */
+void test_buddy_realloc(void) {
+  fprintf(stderr, "->Testing buddy realloc\n");
+
+  //Setup
+  struct buddy_pool pool;
+  size_t bytes = UINT64_C(1) << DEFAULT_K;
+  buddy_init(&pool, bytes);
+
+  //Use buddy_realloc for malloc, then confirm it returned what was expected
+  void *mem = buddy_realloc(&pool, NULL, bytes - sizeof(struct avail));
+  assert(mem != NULL);
+  struct avail *tmp = (struct avail *)mem - 1;
+  assert(tmp->kval == DEFAULT_K);
+  assert(tmp->tag == BLOCK_RESERVED);
+  check_buddy_pool_empty(&pool);
+
+  //Use buddy_realloc for realloc, then confirm it returned what was expected
+  mem = buddy_realloc(&pool, mem, (UINT64_C(1) << MIN_K) - sizeof(struct avail));
+  assert(mem != NULL);
+  tmp = (struct avail *)mem - 1;
+  assert(tmp->kval == MIN_K);
+  assert(tmp->tag == BLOCK_RESERVED);
+  check_buddy_pool_partially_used(&pool, MIN_K);
+
+  //Use buddy_realloc for free, then confirm it freed properly
+  mem = buddy_realloc(&pool, mem, 0);
+  assert(mem == NULL);
+  check_buddy_pool_full(&pool);
+  buddy_destroy(&pool);
+}
 
 int main(void) {
   time_t t;
@@ -146,5 +198,6 @@ int main(void) {
   RUN_TEST(test_buddy_init);
   RUN_TEST(test_buddy_malloc_one_byte);
   RUN_TEST(test_buddy_malloc_one_large);
+  RUN_TEST(test_buddy_realloc);
 return UNITY_END();
 }
