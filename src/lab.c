@@ -41,7 +41,16 @@ void *buddy_malloc(struct buddy_pool *pool, size_t size) {
 //    printf("debug- buddy malloc: kval found: %d, L->tag = %d.\n", L->kval, L->tag);
 
     unsigned int fit = (L->kval == btok(size)) ? true : false;
-    if(fit) {pool->avail[L->kval].next = pool->avail[L->kval].prev = &pool->avail[L->kval];} //remove the block if the required memory takes all available memory
+    if(fit) {
+        if(L->next != L->prev) {
+            L->next->prev = L->prev;
+            L->prev->next = L->next;
+        } else {
+            pool->avail[L->kval].next = pool->avail[L->kval].prev = &pool->avail[L->kval];
+            pool->avail[L->kval].tag = BLOCK_UNUSED;
+            pool->avail[L->kval].kval = L->kval;
+        }
+    } 
     while(!fit) {
         L->kval--;
         struct avail *P = buddy_calc(pool, L);
@@ -50,6 +59,7 @@ void *buddy_malloc(struct buddy_pool *pool, size_t size) {
         P->tag = BLOCK_AVAIL;
         if(pool->avail[P->kval].next == &pool->avail[P->kval] && pool->avail[P->kval].prev == &pool->avail[P->kval]) {
             P->next = P->prev = &pool->avail[P->kval];
+            pool->avail[P->kval].next = pool->avail[P->kval].prev = P;
         } else {
             P->next = pool->avail[P->kval].next;
             P->prev = &pool->avail[P->kval];
@@ -120,7 +130,20 @@ void buddy_free(struct buddy_pool *pool, void *ptr) {
     }
 }
 
-//void *buddy_realloc(struct buddy_pool *pool, void *ptr, size_t size) {}
+void *buddy_realloc(struct buddy_pool *pool, void *ptr, size_t size) {
+    if(size > pool->numbytes - sizeof(struct avail)) {size = pool->numbytes - sizeof(struct avail);} //if size would exceed the max usable size, reset it to the max usable size
+    if(ptr == NULL) {return buddy_malloc(pool, size);} //if ptr is null call malloc right away
+    struct avail *L = (struct avail *) ptr - 1; //set L to true start of ptr for easy access to the original kval
+
+    //get the minimum size for later, then free the old block to maximize the avaible memory for reallocating
+    size_t msize = (size < (UINT64_C(1) << L->kval)) ? size : UINT64_C(1) << L->kval;
+    buddy_free(pool, ptr);
+    L = buddy_malloc(pool, size);
+
+    //if L isn't null, copy the old contents of ptr to L, then return L regardless
+    if(L != NULL) {memcpy(L, ptr, msize);}
+    return L;
+}
 
 void buddy_init(struct buddy_pool *pool, size_t size) {
     if(size == 0) {size = UINT64_C(1) << DEFAULT_K;}
